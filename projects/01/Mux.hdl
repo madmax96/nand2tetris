@@ -8,7 +8,7 @@
  * out = a if sel == 0
  *       b otherwise
  */
-
+// (sel AND b) OR (NOT(sel) AND a)
 CHIP Mux {
     IN a, b, sel;
     OUT out;

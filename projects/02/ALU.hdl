@@ -52,16 +52,18 @@ CHIP ALU {
 
     Add16(a=nxout, b=nyout, out=add);
     And16(a=nxout, b=nyout, out=and);
-
     Mux16(a=and, b=add, sel=f, out=fout);
+
     Not16(in=fout, out=nfout);
-    Mux16(a=fout, b=nfout, sel=no, out[0..7]=finalout1,
-                                   out[8..15]=finalout2,
+    Mux16(a=fout, b=nfout, sel=no, out[0..7]=first8outbits, // splitting here because we have only Or8Way
+                                   out[8..15]=second8outbits,
                                    out[15]=ng,
                                    out=out);
 
-    Or8Way(in=finalout1, out=or81);
-    Or8Way(in=finalout2, out=or82);
+/* all the logic below is for `zr` output.
+we want to know if all bits are zero or not*/
+    Or8Way(in=first8outbits, out=or81);
+    Or8Way(in=second8outbits, out=or82); // could use Or16Ways
     Or(a=or81, b=or82, out=notzr);
-    Not(in=notzr, out=zr);
+    Not(in=notzr, out=zr); // could use NOR instead of those 2 lines
 }

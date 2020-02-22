@@ -31,22 +31,19 @@
     D=A
     @current_white
     M=D
-    (WHITE_LOOP)
-        @current_white
-        A=M
-        M=0
-        @end_white
-        D=M
-        @current_white
-        D=D-M
-        @LOOP
-        D;JEQ
-        @current_white
-        M=M+1
-        @WHITE_LOOP
-        0;JMP
-
+(WHITE_LOOP)
+    @current_white
+    A=M // deref - load in A value of Memory[A]
+    M=0 // loading black pixel into SCREEN[current_white]
+    @end_white
+    D=M
+    @current_white
+    D=D-M // calculating current_white - end_white
     @LOOP
+    D;JEQ
+    @current_white
+    M=M+1
+    @WHITE_LOOP
     0;JMP
 
 (BLACK)
@@ -59,20 +56,17 @@
     D=A
     @current_black
     M=D
-    (BLACK_LOOP)
-        @current_black
-        A=M
-        M=-1
-        @end_black
-        D=M
-        @current_black
-        D=D-M
-        @LOOP
-        D;JEQ
-        @current_black
-        M=M+1
-        @BLACK_LOOP
-        0;JMP
-
+(BLACK_LOOP)
+    @current_black
+    A=M
+    M=-1
+    @end_black
+    D=M
+    @current_black
+    D=D-M
     @LOOP
+    D;JEQ
+    @current_black
+    M=M+1
+    @BLACK_LOOP
     0;JMP

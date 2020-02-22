@@ -9,14 +9,14 @@
 // Put your code here.
 
 @R1
-D=M
+D=M // load second number in D register
 @R2
 M=D // load second number in result memory R2
 @END
 D;JEQ // if second number is 0 then END
 
 @R0
-D=M
+D=M // load first number in D
 @R2
 M=D // load first number in result memory R2
 @END
@@ -26,11 +26,11 @@ D;JEQ // if first number is 0 then END
     @R1
     D=M-1
     @END
-    D;JEQ
+    D;JEQ // stop when second number is 1
     @R1
     M=M-1 // decrease second num by 1
     @R0
-    D=M
+    D=M // load first number in D
     @R2
     M=M+D // increase result by first num
     @LOOP

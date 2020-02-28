@@ -39,5 +39,42 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+    Mux16(a=instruction, b=ALUOut, sel=instruction[15], out=InA);
+
+    // instruction[5] is d1
+    Not(in=instruction[5], out=NotD1);
+    Nand(a=instruction[15], b=NotD1, out=loadA);
+    // instruction[4] is d2 - controlls if we should store output in D
+    And(a=instruction[15], b=instruction[4], out=loadD);
+    ARegister(in=InA, load=loadA, out=ARegOut,out[0..14]=addressM);
+    DRegister(in=ALUOut, load=loadD, out=DRegOut);
+    // instruction[3] is d3
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    // instruction[12] is `a` bit used to determin if alu should operate on A or Memory[A] values
+    Mux16(a=ARegOut, b=inM, sel=instruction[12], out=Y);
+
+    ALU(x=DRegOut,
+        y=Y,
+        zx=instruction[11],
+        nx=instruction[10],
+        zy=instruction[9],
+        ny=instruction[8],
+        f=instruction[7],
+        no=instruction[6],
+        out=ALUOut, out=outM, zr=ALU-ZR, ng=ALU-NG);
+    Or(a=ALU-ZR, b=ALU-NG, out=IsZeroOrNeg);
+    Not(in=IsZeroOrNeg, out=ALU-POS);
+
+    And(a=instruction[0], b=ALU-POS, out=JMP-POS);
+    And(a=instruction[1], b=ALU-ZR, out=JMP-EQ);
+    And(a=instruction[2], b=ALU-NG, out=JMP-NG);
+
+    Or8Way(in[0]=JMP-POS,
+           in[1]=JMP-EQ,
+           in[2]=JMP-NG,
+           in[3..7]=false,
+           out=ShouldJump);
+    And(a=ShouldJump, b=instruction[15], out=loadPC);
+    PC(in=ARegOut, load=loadPC, inc=true, reset=reset, out[0..14]=pc);
 }

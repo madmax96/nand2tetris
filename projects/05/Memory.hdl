@@ -27,19 +27,17 @@ CHIP Memory {
     OUT out[16];
 
     PARTS:
-    And(a=address[14], b=address[13], out=ISKEYBOARDACCESS);
     // address[14] - highest significant bit will be 0 for RAM access
     Xor(a=address[14], b=true, out=ISRAMACCESS);
+    And(a=address[14], b=address[13], out=ISKEYBOARDACCESS);
     Mux(a=address[14], b=false, sel=ISKEYBOARDACCESS,out=ISSCREENACCESS);
 
     And(a=load, b=ISRAMACCESS, out=LOADRAM);
     And(a=load, b=ISSCREENACCESS, out=LOADSCREEN);
     RAM16K(in=in, load=LOADRAM, address=address[0..13], out=OUTRAM); // 14 bits address
 
-    // SUbtract 18384 from address to get Screen address
-    // Add16(a[15]=false,a[0..14]=address, b[0..13]=false,b[14]=true,b[15]=true,out[0..12]=SCREENADDRESS);
-
-    Screen(in=in, load=LOADSCREEN, address[0..12]=address[0..12], out=OUTSCREEN); // 13 bits address
+    // Screen is RAM8K
+    Screen(in=in, load=LOADSCREEN, address=address[0..12], out=OUTSCREEN); // 13 bits address
     Keyboard(out=OUTKEYBOARD); //1 bit address
 
     Mux16(a=OUTRAM, b=OUTSCREEN, sel=ISSCREENACCESS, out=OUTRAMORSCREEN);

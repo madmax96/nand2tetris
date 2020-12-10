@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <time.h>
+#include "hash_map.h"
 
 #define MAX_LINE 1000
-#define MAX_SYMBOL_NAME 50
 
-FILE* fptr;
 enum COMMAND_TYPE { A_COMMAND, C_COMMAND, LABEL };
 int rom_address = 0;
 int ram_address = 16;
@@ -14,102 +14,61 @@ int ram_address = 16;
 typedef struct Command {
     enum COMMAND_TYPE type;
     char* commandText;
-    char* label; // if type is label
-    char* symbol;
-    int value;
-    char* dest;
-    char* comp;
-    char* jump;
+    union {
+        char* label; // if type is label
+        char* symbol;
+        int value;
+        struct {
+            char* dest;
+            char* comp;
+            char* jump;
+        } c_fields;
+    } data;
 } Command;
 
-typedef struct Node {
+typedef struct C_NODE {
     Command* cmd;
-    struct Node* next;
-} Node;
+    struct C_NODE* next;
+} C_NODE;
 
-typedef struct SymbolsMap {
-    char** keys;
-    void** vals;
-    int count;
-} SymbolsMap;
-
-SymbolsMap* new_map(){
-    SymbolsMap* m = malloc(sizeof(SymbolsMap));
-    m->count = 0;
-    m->keys = NULL;
-    m->vals = NULL;
-    return m;
-}
-
-Command* new_command(){
+Command* new_command() {
     Command* c = malloc(sizeof(Command));
-    c->value = -1;
-    c->symbol = NULL;
-    c->label = NULL;
+    c->data.value = -1;
+    c->data.symbol = NULL;
+    c->data.label = NULL;
     return c;
 }
-char* int_to_bin16(int num);
-void assemble(Node* head_command, SymbolsMap* m);
 
-// pseudo hash map
+char* int_to_bin16(int16_t num);
+void assemble(C_NODE* head_command, Map m, char* dest);
 
-void* hash_get(SymbolsMap* map, char* key){
-  for (int i = 0; i < map->count; i++){
-    if (strcmp(key,map->keys[i]) == 0) {
-      return map->vals[i];
-    }
-  }
-  return NULL;
-}
+void install_predefined_symbols(Map m){
 
-int hash_contains(SymbolsMap* map, char* key){
-  for (int i = 0; i < map->count; i++){
-    if (strcmp(key,map->keys[i]) == 0) {
-      return 1;
-    }
-  }
-  return 0;
-}
+    map_add(m,"SP",int_to_bin16(0));
+    map_add(m,"LCL",int_to_bin16(1));
+    map_add(m,"ARG",int_to_bin16(2));
+    map_add(m,"THIS",int_to_bin16(3));
+    map_add(m,"THAT",int_to_bin16(4));
 
-void hash_add(SymbolsMap* map, char* key, void* value){
+    map_add(m,"R0",int_to_bin16(0));
+    map_add(m,"R1",int_to_bin16(1));
+    map_add(m,"R2",int_to_bin16(2));
+    map_add(m,"R3",int_to_bin16(3));
+    map_add(m,"R4",int_to_bin16(4));
+    map_add(m,"R5",int_to_bin16(5));
+    map_add(m,"R6",int_to_bin16(6));
+    map_add(m,"R7",int_to_bin16(7));
+    map_add(m,"R8",int_to_bin16(8));
+    map_add(m,"R9",int_to_bin16(9));
+    map_add(m,"R10",int_to_bin16(10));
+    map_add(m,"R11",int_to_bin16(11));
+    map_add(m,"R12",int_to_bin16(12));
+    map_add(m,"R13",int_to_bin16(13));
+    map_add(m,"R14",int_to_bin16(14));
+    map_add(m,"R15",int_to_bin16(15));
 
-  map->count++;
-
-  map->keys = realloc(map->keys, sizeof(char*) * map->count);
-  map->vals = realloc(map->vals,sizeof(void*) * map->count);
-
-  map->vals[map->count-1] = value;
-  map->keys[map->count-1] = malloc(strlen(key) + 1);
-  strcpy(map->keys[map->count - 1], key);
-}
-
-void insert_predefined_symbols(SymbolsMap* m){
-
-    hash_add(m,"SP",int_to_bin16(0));
-    hash_add(m,"LCL",int_to_bin16(1));
-    hash_add(m,"ARG",int_to_bin16(2));
-    hash_add(m,"THIS",int_to_bin16(3));
-    hash_add(m,"THAT",int_to_bin16(4));
-
-    hash_add(m,"R0",int_to_bin16(0));
-    hash_add(m,"R1",int_to_bin16(1));
-    hash_add(m,"R2",int_to_bin16(2));
-    hash_add(m,"R3",int_to_bin16(3));
-    hash_add(m,"R4",int_to_bin16(4));
-    hash_add(m,"R5",int_to_bin16(5));
-    hash_add(m,"R6",int_to_bin16(6));
-    hash_add(m,"R7",int_to_bin16(7));
-    hash_add(m,"R8",int_to_bin16(8));
-    hash_add(m,"R9",int_to_bin16(9));
-    hash_add(m,"R10",int_to_bin16(10));
-    hash_add(m,"R11",int_to_bin16(11));
-    hash_add(m,"R12",int_to_bin16(12));
-    hash_add(m,"R13",int_to_bin16(13));
-    hash_add(m,"R14",int_to_bin16(14));
-    hash_add(m,"R15",int_to_bin16(15));
-
-    hash_add(m,"SCREEN",int_to_bin16(16384));
-    hash_add(m,"KBD",int_to_bin16(24576));
+    map_add(m,"SCREEN",int_to_bin16(16384));
+    map_add(m,"KBD",int_to_bin16(24576));
 }
 
 char* get_comp_inst(char* comp_cmd) {
@@ -260,19 +219,27 @@ char* get_jmp_inst(char* jmp_cmd) {
     return "000";
 }
 
-void list_add(Node* head, Command* cmd) {
-    Node* temp = head;
-    while (temp->next != NULL) {
-        temp = temp->next;
-    }
-    Node* new = malloc(sizeof(struct Node));
+C_NODE* list_add(C_NODE* head, Command* cmd)
+{
+
+    C_NODE* new = malloc(sizeof(struct C_NODE));
     new->cmd = cmd;
     new->next = NULL;
+    if (head == NULL)
+    {
+        return new;
+    }
+    C_NODE* temp = head;
+    while (temp->next != NULL)
+    {
+        temp = temp->next;
+    }
     temp->next = new;
+    return head;
 }
 
-void print_commands(Node* head){
-    Node* temp = head;
+void print_commands(C_NODE* head) {
+    C_NODE* temp = head;
     int i = 0;
     while(temp != NULL){
         printf("%d. %s\n", i, temp->cmd->commandText);
@@ -281,12 +248,11 @@ void print_commands(Node* head){
     }
 }
 
-char* int_to_bin16(int num) {
-
-    char* binary = malloc(sizeof(char) * 17);
+char* int_to_bin16_old(int16_t num) {
+    char* binary = malloc(17);
     int i = 15;
     while(num >= 1) {
-        binary[i] = (num % 2 >= 1) ? '1' : '0';
+        binary[i] = (num % 2) ? '1' : '0';
         num /= 2;
         i--;
     }
@@ -297,43 +263,56 @@ char* int_to_bin16(int num) {
     return binary;
 }
 
-Command* parse_line (char line[], int count, SymbolsMap* m) {
+char* int_to_bin16(int16_t num) {
+    int i = 16; // number of bits
+    char* binary = malloc(i + 1);
+    binary[i] = '\0';
+    while(i > 0) {
+        binary[i-1] = (num & 1) ? '1' : '0';
+        i--;
+        num >>=1;
+    }
+    return binary;
+}
 
-    if (!count) return NULL;
+Command* parse_line (char line[], Map m) {
+
+    int len = strlen(line);
+    if (!len) return NULL;
     Command* c = new_command();
     c->commandText = malloc(strlen(line) + 1);
     strcpy(c->commandText, line);
+
     if (line[0] == '@') {
         c->type = A_COMMAND;
-        if (isdigit(line[1])) { // error handling: check that if first digit is 0 there is nothing after
-            char digits[5];
-            int j = 0;
-            for (int i = 1; i < count; i++) {
+        if (isdigit(line[1]) || line[1] == '-') {
+            char digits[6];
+            for (int i = 1; i <= 6; i++) {
                 digits[i-1] = line[i];
             }
-            c->value = atoi(digits);
+            c->data.value = atoi(digits);
         } else {
-            char* symbol = malloc(sizeof(char) * MAX_SYMBOL_NAME);
-            for (int i = 1; i <= count; i++) {
+            char* symbol = malloc(len);
+            for (int i = 1; i <= len; i++) {
                 symbol[i - 1] = line[i];
             }
-            c->symbol = symbol;
+            c->data.symbol = symbol;
         }
         rom_address++;
     } else if (line[0] == '(') {
-        char* label = malloc(sizeof(char) * MAX_SYMBOL_NAME);
+        char* label = malloc(len-1);
         // error handling: check that last char is ')'
         c->type = LABEL;
 
-        for (int i = 1; i < count - 1; i++) {
+        for (int i = 1; i < len - 1; i++) {
             label[i - 1] = line[i];
         }
-        label[count-2] = '\0';
-        c->label = label;
-        if (hash_contains(m, label)){
-             return NULL;
+        label[len-1] = '\0';
+        c->data.label = label;
+        if (map_get(m, label) != NULL){
+             return NULL; // should signal error for duplicate labels
         }
-        hash_add(m, label, int_to_bin16(rom_address));
+        map_add(m, label, int_to_bin16(rom_address));
 
     } else {
         c->type = C_COMMAND;
@@ -381,56 +360,81 @@ Command* parse_line (char line[], int count, SymbolsMap* m) {
         comp[3] = '\0';
         dest[3] = '\0';
 
-        c->jump = jump;
-        c->comp = comp;
-        c->dest = dest;
+        c->data.c_fields.jump = jump;
+        c->data.c_fields.comp = comp;
+        c->data.c_fields.dest = dest;
         rom_address++;
     }
 
    return c;
 }
-int main (int argc, char** argv){
 
-    Node* head = NULL;
-    SymbolsMap* m = new_map();
-    insert_predefined_symbols(m);
-    char* source = argv[1];
-    fptr = fopen(source,"r");
-    if (fptr == NULL){
-        printf("File '%s' does not exist.\n", source);
-        exit(1);
-    }
-    char c, line[MAX_LINE];
+char* get_destination_filename(char* source_filename) {
+    size_t substr_len = strlen(source_filename) - 3;
+    char* dest = malloc(substr_len + 5);
+    memcpy(dest, source_filename, substr_len);
+    strcat(dest,"hack");
+    return dest;
+}
+
+int get_instruction(char* line, FILE* fptr) {
     int i = 0;
-
-    while ((c=fgetc(fptr)) != EOF) {
-
-        Command* cmd = NULL;
-        if (c == '/' && i > 0 && line[i-1] == '/') {
+    char c;
+    while (1)
+    {
+        c=fgetc(fptr);
+        if (c == EOF) return -1;
+        if (c == '/' && i > 0 && line[i-1] == '/')
+        {
             line[--i] = '\0';
-            cmd = parse_line(line,i, m);
-            i = 0;
-            while(fgetc(fptr) != '\n'){} // go to the end of the line
-        } else if (c == '\n') {
+            while((c = fgetc(fptr)) != '\n' && c != EOF){} // go to the end of the line
+            return c==EOF ? -1: 1;
+        }
+        else if (c == '\n')
+        {
             line[i] = '\0';
-            cmd = parse_line(line,i, m);
-            i = 0;
-        } else if (!iscntrl(c) && c != ' ' && c!= '\t') {
+            return 1;
+        }
+        else if (!isspace(c))
+        {
             line[i++] = c;
         }
-        if (cmd != NULL){
-            if (head == NULL){
-                head = malloc(sizeof(Node));
-                head->cmd = cmd;
-                head->next = NULL;
-            } else {
-                list_add(head,cmd);
-            }
+    }
+}
+
+int main (int argc, char** argv)
+{
+    clock_t t;
+    t = clock();
+    char* source_filename = argv[1];
+    FILE* fptr = fopen(source_filename,"r");
+    if (fptr == NULL)
+    {
+        printf("File '%s' does not exist.\n", source_filename);
+        exit(1);
+    }
+    C_NODE* head = NULL;
+    Map m = new_map();
+    char* dest_filename = get_destination_filename(source_filename);
+    char c, line[MAX_LINE];
+    int i = 0;
+    Command* cmd = NULL;
+
+    install_predefined_symbols(m);
+
+    while (get_instruction(line, fptr) != -1) {
+
+        cmd = parse_line(line,m);
+        if (cmd != NULL) {
+            head = list_add(head,cmd);
         }
     }
     fclose(fptr);
-    //print_commands(head);
-    assemble(head, m);
+    // print_commands(head);
+    assemble(head, m, dest_filename);
+    t = clock() - t;
+    double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
+    printf("Time taken: %f\n", time_taken);
     return 0;
 }
 
@@ -438,23 +442,21 @@ void write_instruction(FILE *fptr, char* command){
     fprintf(fptr, "%s\n", command);
 }
 
-void assemble(Node* head, SymbolsMap* m) {
-    Node* temp = head;
-    FILE* fptr = fopen("out.hack", "w");
+void assemble(C_NODE* head, Map m, char* dest) {
+    C_NODE* temp = head;
+    FILE* fptr = fopen(dest, "w");
+    char* instruction;
     while(temp!=NULL) {
         Command* cmd = temp->cmd;
-        char* instruction;
         switch(cmd->type) {
             case A_COMMAND:
-                if (cmd->value != -1) {
-                    instruction = int_to_bin16(cmd->value);
+                if (cmd->data.value != -1) {
+                    instruction = int_to_bin16(cmd->data.value);
                 } else {
-                    char* symbol = cmd->symbol;
-                    if (hash_contains(m, symbol)) {
-                        instruction = (char*)hash_get(m, symbol);
-                    } else {
+                    char* symbol = cmd->data.symbol;
+                    if ((instruction = map_get(m, symbol)) == NULL) {
                        instruction = int_to_bin16(ram_address++);
-                       hash_add(m, symbol, instruction);
+                       map_add(m, symbol, instruction);
                     }
                 }
                 write_instruction(fptr, instruction);
@@ -462,17 +464,17 @@ void assemble(Node* head, SymbolsMap* m) {
             case C_COMMAND:
                 instruction = malloc(sizeof(char) * 17);
                 instruction[0] = instruction[1] = instruction[2] = '1';
-                memcpy(&instruction[3], get_comp_inst(cmd->comp), 7 * sizeof(char));
-                memcpy(&instruction[10], get_dest_inst(cmd->dest), 3 * sizeof(char));
-                memcpy(&instruction[13], get_jmp_inst(cmd->jump), 3 * sizeof(char));
+                memcpy(&instruction[3], get_comp_inst(cmd->data.c_fields.comp), 7 * sizeof(char));
+                memcpy(&instruction[10], get_dest_inst(cmd->data.c_fields.dest), 3 * sizeof(char));
+                memcpy(&instruction[13], get_jmp_inst(cmd->data.c_fields.jump), 3 * sizeof(char));
                 instruction[16] = '\0';
                 write_instruction(fptr, instruction);
+                free(instruction);
                 break;
             case LABEL:
                 // do nothing
                 break;
         }
-        // instruction = NULL;
         temp=temp->next;
     }
     fclose(fptr);

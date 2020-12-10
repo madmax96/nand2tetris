@@ -59,7 +59,7 @@
 (BLACK_LOOP)
     @current_black
     A=M
-    M=-1
+    M=-1 // because binary it is `1111111111111111`
     @end_black
     D=M
     @current_black

@@ -7,7 +7,7 @@
 // (R0, R1, R2 refer to RAM[0], RAM[1], and RAM[2], respectively.)
 
 // Put your code here.
-
+(MULT)
 @R1
 D=M // load second number in D register
 @R2
@@ -23,18 +23,18 @@ M=D // load first number in result memory R2
 D;JEQ // if first number is 0 then END
 
 (LOOP)
-    @R1
-    D=M-1
-    @END
-    D;JEQ // stop when second number is 1
-    @R1
-    M=M-1 // decrease second num by 1
-    @R0
-    D=M // load first number in D
-    @R2
-    M=M+D // increase result by first num
-    @LOOP
-    0;JMP
+@R1
+D=M-1
+@END
+D;JEQ // stop when second number is 1
+@R1
+M=M-1 // decrease second num by 1
+@R0
+D=M // load first number in D
+@R2
+M=M+D // increase result by first num
+@LOOP
+0;JMP
 (END)
-    @END
-    0;JMP
+@END
+0;JMP

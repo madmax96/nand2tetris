@@ -4,7 +4,7 @@
 // File name: projects/02/HalfAdder.hdl
 
 /**
- * Computes the sum of two bits.
+ * Computes the sum of two bits.and carry bit
  */
 
 CHIP HalfAdder {

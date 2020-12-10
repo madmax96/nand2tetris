@@ -16,11 +16,13 @@
    @OUTPUT_D
    0;JMP            // goto output_d
 (OUTPUT_FIRST)
-   @R0             
+   @R0
    D=M              // D = first number
 (OUTPUT_D)
    @R2
    M=D              // M[2] = D (greatest number)
+
+
 (INFINITE_LOOP)
    @INFINITE_LOOP
    0;JMP            // infinite loop

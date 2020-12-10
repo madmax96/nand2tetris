@@ -35,7 +35,7 @@ CHIP CPU {
 
     OUT outM[16],        // M value output
         writeM,          // Write to M?
-        addressM[15],    // Address in data memory (of M)
+        addressM[15],    // Address where to write outM
         pc[15];          // address of next instruction
 
     PARTS:
@@ -46,6 +46,9 @@ CHIP CPU {
      * d - bits used to determine where to save value calculated by ALU
      * j - bits used to determine what to execute next (jump or not)
     */
+
+    // 1. Decode
+
     Mux16(a=instruction, b=ALUOut, sel=instruction[15], out=InA);
 
     // instruction[5] is d1 - controlls if we should load output in reg A
@@ -61,6 +64,7 @@ CHIP CPU {
     // instruction[12] is `a` bit used to determin if ALU should operate on A or Memory[A] values
     Mux16(a=ARegOut, b=inM, sel=instruction[12], out=Y);
 
+     // 2. Execute
     ALU(x=DRegOut,
         y=Y,
         zx=instruction[11],
@@ -71,6 +75,7 @@ CHIP CPU {
         no=instruction[6],
         out=ALUOut, out=outM, zr=ALU-ZR, ng=ALU-NG);
 
+    // 3. Fetch
     // code below determines next instruction to execute
     Or(a=ALU-ZR, b=ALU-NG, out=IsZeroOrNeg);
     Not(in=IsZeroOrNeg, out=ALU-POS);

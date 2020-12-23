@@ -6,7 +6,7 @@ static Node* new_node(char* key, char* value){
     Node* n = (Node*)malloc(sizeof(Node));
     n->next = NULL;
     n->key = (char*) malloc(strlen(key) + 1);
-    n->value = malloc(strlen(value) + 1);
+    n->value = (char*) malloc(strlen(value) + 1);
     strcpy(n->key,key);
     strcpy(n->value,value);
     return n;
@@ -33,13 +33,15 @@ static unsigned int hash(char *s) {
 
 char* map_get(Map map, char* key) {
     Node* head;
+    char* found_value = NULL;
     for (head = map[hash(key)]; head != NULL; head = head->next)
     {
         if (strcmp(key,head->key) == 0) {
-            return head->value;
+            found_value = malloc(strlen(head->value) + 1);
+            return strcpy(found_value,head->value);
         }
     }
-    return NULL;
+    return found_value;
 }
 
 int map_add(Map map, char* key, char* value) {

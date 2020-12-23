@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
@@ -8,16 +9,18 @@
 #define MAX_LINE 1000
 
 enum COMMAND_TYPE { A_COMMAND, C_COMMAND, LABEL };
-int rom_address = 0;
-int ram_address = 16;
+enum A_COMMAND_MODE { A_VALUE, A_SYMBOL };
+int16_t rom_address = 0;
+int16_t ram_address = 16;
 
 typedef struct Command {
     enum COMMAND_TYPE type;
+    enum A_COMMAND_MODE a_cmd_mode;
     char* commandText;
     union {
         char* label; // if type is label
         char* symbol;
-        int value;
+        int16_t value;
         struct {
             char* dest;
             char* comp;
@@ -33,13 +36,13 @@ typedef struct C_NODE {
 
 Command* new_command() {
     Command* c = malloc(sizeof(Command));
-    c->data.value = -1;
-    c->data.symbol = NULL;
-    c->data.label = NULL;
+    // c->data.symbol = NULL;
+    // c->data.label = NULL;
     return c;
 }
 
 char* int_to_bin16(int16_t num);
+
 void assemble(C_NODE* head_command, Map m, char* dest);
 
 void install_predefined_symbols(Map m){
@@ -126,7 +129,6 @@ char* get_comp_inst(char* comp_cmd) {
     if (strcmp(comp_cmd, "D|A") == 0){
         return "0010101";
     }
-
     if (strcmp(comp_cmd, "M") == 0){
         return "1110000";
     }
@@ -157,7 +159,6 @@ char* get_comp_inst(char* comp_cmd) {
     if (strcmp(comp_cmd, "D|M") == 0){
         return "1010101";
     }
-    // return 0
     return "0101010";
 }
 
@@ -222,7 +223,7 @@ char* get_jmp_inst(char* jmp_cmd) {
 C_NODE* list_add(C_NODE* head, Command* cmd)
 {
 
-    C_NODE* new = malloc(sizeof(struct C_NODE));
+    C_NODE* new = malloc(sizeof(C_NODE));
     new->cmd = cmd;
     new->next = NULL;
     if (head == NULL)
@@ -248,27 +249,13 @@ void print_commands(C_NODE* head) {
     }
 }
 
-char* int_to_bin16_old(int16_t num) {
-    char* binary = malloc(17);
-    int i = 15;
-    while(num >= 1) {
-        binary[i] = (num % 2) ? '1' : '0';
-        num /= 2;
-        i--;
-    }
-    for (int j = 0; j <= i; j++) {
-        binary[j] = '0';
-    }
-    binary[16] = '\0';
-    return binary;
-}
-
 char* int_to_bin16(int16_t num) {
+    int originalNUm = num;
     int i = 16; // number of bits
     char* binary = malloc(i + 1);
     binary[i] = '\0';
     while(i > 0) {
-        binary[i-1] = (num & 1) ? '1' : '0';
+        binary[i-1] = (num & (int16_t)1) ? '1' : '0';
         i--;
         num >>=1;
     }
@@ -291,12 +278,14 @@ Command* parse_line (char line[], Map m) {
                 digits[i-1] = line[i];
             }
             c->data.value = atoi(digits);
+            c->a_cmd_mode = A_VALUE;
         } else {
             char* symbol = malloc(len);
             for (int i = 1; i <= len; i++) {
                 symbol[i - 1] = line[i];
             }
             c->data.symbol = symbol;
+            c->a_cmd_mode = A_SYMBOL;
         }
         rom_address++;
     } else if (line[0] == '(') {
@@ -379,6 +368,7 @@ char* get_destination_filename(char* source_filename) {
 
 int get_instruction(char* line, FILE* fptr) {
     int i = 0;
+    line[i] = '\0'; // empty string
     char c;
     while (1)
     {
@@ -421,16 +411,18 @@ int main (int argc, char** argv)
     Command* cmd = NULL;
 
     install_predefined_symbols(m);
+    int should_continue;
 
-    while (get_instruction(line, fptr) != -1) {
-
+    do {
+        should_continue = get_instruction(line, fptr);
         cmd = parse_line(line,m);
         if (cmd != NULL) {
             head = list_add(head,cmd);
         }
-    }
+    } while (should_continue != -1);
+
     fclose(fptr);
-    // print_commands(head);
+    print_commands(head);
     assemble(head, m, dest_filename);
     t = clock() - t;
     double time_taken = ((double)t)/CLOCKS_PER_SEC; // in seconds
@@ -445,19 +437,15 @@ void write_instruction(FILE *fptr, char* command){
 void assemble(C_NODE* head, Map m, char* dest) {
     C_NODE* temp = head;
     FILE* fptr = fopen(dest, "w");
-    char* instruction;
-    while(temp!=NULL) {
+    char* instruction = NULL;
+    while (temp != NULL) {
         Command* cmd = temp->cmd;
         switch(cmd->type) {
             case A_COMMAND:
-                if (cmd->data.value != -1) {
-                    instruction = int_to_bin16(cmd->data.value);
-                } else {
-                    char* symbol = cmd->data.symbol;
-                    if ((instruction = map_get(m, symbol)) == NULL) {
-                       instruction = int_to_bin16(ram_address++);
-                       map_add(m, symbol, instruction);
-                    }
+                instruction = cmd->a_cmd_mode == A_SYMBOL ? map_get(m, cmd->data.symbol) : int_to_bin16(cmd->data.value);
+                if (instruction == NULL) {
+                    instruction = int_to_bin16(ram_address++);
+                    map_add(m, cmd->data.symbol, instruction);
                 }
                 write_instruction(fptr, instruction);
                 break;
@@ -469,12 +457,15 @@ void assemble(C_NODE* head, Map m, char* dest) {
                 memcpy(&instruction[13], get_jmp_inst(cmd->data.c_fields.jump), 3 * sizeof(char));
                 instruction[16] = '\0';
                 write_instruction(fptr, instruction);
-                free(instruction);
                 break;
             case LABEL:
                 // do nothing
                 break;
         }
+        if (instruction != NULL) {
+            free(instruction);
+        }
+        instruction = NULL;
         temp=temp->next;
     }
     fclose(fptr);

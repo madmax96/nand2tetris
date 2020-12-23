@@ -3,7 +3,7 @@
 typedef struct Node {
     struct Node* next;
     char* key;
-    void* value;
+    char* value;
 } Node;
 
 typedef Node** Map;

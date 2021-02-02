@@ -11,6 +11,7 @@
 
 enum INSTRUCTION_TYPE { I_ARITHMETIC, I_PUSH, I_POP, I_LABEL, I_GOTO, I_IF, I_FUNCTION, I_RETURN, I_CALL };
 
+int cmp_label_index = 1;
 typedef struct vm_instruction {
     char* instruction_text;
     char* arg1;
@@ -58,7 +59,7 @@ int list_add (list* l, list_node* ln)
     }
     head->next = ln;
     l->size++;
-    return 1;
+    return l->size;
 }
 
 void free_list_node(list_node* n)
@@ -103,21 +104,321 @@ void print_string(void *d)
    printf("\n%s", (char *)d);
 }
 
-list* parse(char* vm_code)
+void print_vmi(void *d)
 {
-   list* l = new_list(NULL);
-   size_t vmi_size = sizeof(vm_instruction);
-   vm_instruction* vmi = malloc(vmi_size);
-   list_add(l, new_list_node(vmi, vmi_size));
-
-   return l;
+    vm_instruction* vmi = (vm_instruction*)d;
+    printf("\n");
+    printf("instruction text --> %s\narg1 --> %s\narg2 --> %s\ntype -->  %d", vmi->instruction_text, vmi->arg1, vmi->arg2, vmi->i_type);
 }
 
-char* gen_asm(list* instructions, char* filename)
+// removes spaces from the ends of the string
+// returns new string size
+int str_strip_spaces(char* str)
+{
+    size_t str_len = strlen(str);
+    int i = 0;
+    int j = str_len-1;
+    int stop_start = 0;
+    int stop_end = 0;
+    int spaces_start = 0;
+    int spaces_end = 0;
+    while (!stop_start || !stop_end) {
+        if (i > j) {
+            *str = '\0';
+            return 0;
+        }
+        if (isspace(str[i]) && !stop_start) {
+            spaces_start++;
+        } else {
+            stop_start = 1;
+        }
+        if (isspace(str[j]) && !stop_end) {
+            spaces_end++;
+        } else {
+            stop_end = 1;
+        }
+        !stop_start && i++;
+        !stop_end && j--;
+    }
+    str_len -= spaces_end;
+    str[str_len] = '\0';
+    str_len -= spaces_start;
+    memmove(str, str + spaces_start, str_len + 1);
+    return str_len;
+}
+
+int str_starts_with (char* source, char* test)
+{
+    size_t t_len = strlen(test);
+    if (t_len >= strlen(source)) {
+        return strcmp(source, test) == 0;
+    }
+    char buff[t_len + 1];
+    memcpy(buff, source, t_len);
+    buff[t_len] = '\0';
+    return strcmp(buff, test) == 0;
+}
+
+void set_instruction_fields(vm_instruction* vmi, char* instr_text, int instr_length)
+{
+    vmi->instruction_text = malloc(instr_length + 1);
+    strcpy(vmi->instruction_text, instr_text);
+
+    if (str_starts_with(instr_text, "push")) {
+        vmi->i_type = I_PUSH;
+    } else if (str_starts_with(instr_text, "pop")) {
+        vmi->i_type = I_POP;
+    } else if (str_starts_with(instr_text, "label")) {
+        vmi->i_type = I_LABEL;
+    } else if (str_starts_with(instr_text, "goto")) {
+        vmi->i_type = I_GOTO;
+    } else if (str_starts_with(instr_text, "if-goto")) {
+        vmi->i_type = I_IF;
+    } else if (str_starts_with(instr_text, "function")) {
+        vmi->i_type = I_FUNCTION;
+    } else if (str_starts_with(instr_text, "call")) {
+        vmi->i_type = I_CALL;
+    } else if (strcmp(instr_text, "return") == 0) {
+        vmi->i_type = I_RETURN;
+    } else {
+        vmi->i_type = I_ARITHMETIC;
+    }
+
+    strtok(instr_text, " "); // ignore first part
+
+    char* arg1 = strtok(NULL, " ");
+    if (arg1) {
+        vmi->arg1 = malloc(strlen(arg1) + 1);
+        strcpy(vmi->arg1, arg1);
+    }
+
+    char* arg2 = strtok(NULL, " ");
+     if (arg2) {
+        vmi->arg2 = malloc(strlen(arg2) + 1);
+        strcpy(vmi->arg2,arg2);
+     }
+    return;
+}
+
+list* parse(char* vm_code)
+{
+    // use strtok ?
+    list* l = new_list(NULL);
+    size_t vmi_size = sizeof(vm_instruction);
+    char c;
+    int i = 0;
+    char line_buff[100];
+    line_buff[0] = '\0';
+    int line_len = 0;
+    int should_parse = 0;
+
+    while (1) {
+        c = vm_code[i++];
+        if (c == '/') {
+            while ((vm_code[i++]) != '\n');
+            line_buff[line_len] = '\0';
+            should_parse = line_len;
+        } else  if (c == '\n' || c == '\0') {
+            line_buff[line_len] = '\0';
+            should_parse = line_len;
+        } else {
+            line_buff[line_len++] = c;
+        }
+        if (should_parse) {
+            if ((line_len = str_strip_spaces(line_buff))) {
+                vm_instruction* vmi = malloc(vmi_size);
+                set_instruction_fields(vmi, line_buff, line_len);
+                list_add(l, new_list_node(vmi, vmi_size));
+                free(vmi);
+            }
+            line_buff[0] = '\0';
+            line_len = 0;
+            should_parse = 0;
+        }
+        if (c == '\0') break;
+    }
+    return l;
+}
+
+
+void write_arithmetic(char* instr, FILE* dest)
+{
+    char* asm_code;
+    if (strcmp(instr, "add") == 0) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n" // A is now addres of second number
+                    "M=D+M\n"
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, "%s", asm_code);
+    }
+    if (strcmp(instr, "sub") == 0) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n"
+                    "M=M-D\n"
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, "%s", asm_code);
+    }
+    if (strcmp(instr, "neg") == 0) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "M=-D\n"; // negate
+        fprintf(dest, "%s", asm_code);
+    }
+    if (strcmp(instr, "eq") == 0) {
+
+        char* asm_code;
+
+        int i_len = snprintf(NULL, 0, "%d", cmp_label_index);
+        char* a_instr = malloc(i_len + 10);
+        char* label = malloc(i_len + 11);
+        snprintf(a_instr, i_len + 10, "@cmp_lbl_%d", cmp_label_index);
+        snprintf(label, i_len + 11, "(cmp_lbl_%d)", cmp_label_index);
+
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n" // A is now addres of second number
+                    "D=D-M\n"
+                    "M=0\n" // assume not equal ==> D!=0
+                    "%s\n" // @cmp_lbl_%d
+                    "D;JNE\n"
+                    "@SP\n"
+                    "A=M-1\n"
+                    "A=A-1\n"
+                    "M=-1\n" // equal
+                    "%s\n" // (cmp_lbl_%d)
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, asm_code, a_instr, label);
+        cmp_label_index++;
+    }
+
+    if (strcmp(instr, "gt") == 0) {
+        char* asm_code;
+
+        int i_len = snprintf(NULL, 0, "%d", cmp_label_index);
+        char* a_instr = malloc(i_len + 10);
+        char* label = malloc(i_len + 11);
+        snprintf(a_instr, i_len + 10, "@cmp_lbl_%d", cmp_label_index);
+        snprintf(label, i_len + 11, "(cmp_lbl_%d)", cmp_label_index);
+
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n" // A is now addres of second number
+                    "D=M-D\n"
+                    "M=0\n" // assume x<=y ==> D<=0
+                    "%s\n" // @cmp_lbl_%d
+                    "D;JLE\n"
+                    "@SP\n"
+                    "A=M-1\n"
+                    "A=A-1\n"
+                    "M=-1\n" // equal
+                    "%s\n" // (cmp_lbl_%d)
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, asm_code, a_instr, label);
+        cmp_label_index++;
+    }
+    if (strcmp(instr, "lt") == 0) {
+        char* asm_code;
+
+        int i_len = snprintf(NULL, 0, "%d", cmp_label_index);
+        char* a_instr = malloc(i_len + 10);
+        char* label = malloc(i_len + 11);
+        snprintf(a_instr, i_len + 10, "@cmp_lbl_%d", cmp_label_index);
+        snprintf(label, i_len + 11, "(cmp_lbl_%d)", cmp_label_index);
+
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n" // A is now addres of second number
+                    "D=M-D\n"
+                    "M=0\n" // assume x>=y ==> D>=0
+                    "%s\n" // @cmp_lbl_%d
+                    "D;JGE\n"
+                    "@SP\n"
+                    "A=M-1\n"
+                    "A=A-1\n"
+                    "M=-1\n" // equal
+                    "%s\n" // (cmp_lbl_%d)
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, asm_code, a_instr, label);
+        cmp_label_index++;
+    }
+    if (strcmp(instr, "and") == 0) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n" // A is now addres of second number
+                    "M=D&M\n"
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, "%s", asm_code);
+    }
+    if (strcmp(instr, "or") == 0) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "A=A-1\n" // A is now addres of second number
+                    "M=D|M\n"
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, "%s", asm_code);
+    }
+    if (strcmp(instr, "not") == 0) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // load first number
+                    "M=!D\n"; // negate
+        fprintf(dest, "%s", asm_code);
+    }
+    if (!asm_code) {
+        printf("\n Error: invalid arithmetic instruction: %s", instr);
+        exit(1);
+    }
+}
+
+void write_push_pop (enum INSTRUCTION_TYPE i_type, char* segment, uint16_t index, FILE* dest)
+{
+     char* asm_code;
+     int i_len = snprintf(NULL, 0, "%d", index);
+     char* a_instr = malloc(i_len + 2);
+     snprintf(a_instr, i_len + 2, "@%d", index);
+    if (i_type == I_PUSH && strcmp(segment, "constant") == 0) {
+        asm_code =  "D=A\n" // D now has constant `index`
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D\n"
+                    "@SP\n"
+                    "M=M+1\n";
+        fprintf(dest, "%s\n%s", a_instr, asm_code);
+    }
+
+    free(a_instr);
+    //  fprintf(dest, "%s", asm_code);
+}
+
+char* write_asm(list* instructions, char* vm_filename, FILE* dest)
 {
     list_node* ln = instructions->head;
     while (ln != NULL) {
         vm_instruction* vmi = (vm_instruction*) ln->data;
+        // fprintf(dest, "%s - %d\n", vmi->instruction_text, vmi->i_type);
+        if (vmi->i_type == I_ARITHMETIC){
+            write_arithmetic(vmi->instruction_text, dest);
+        }
+        if (vmi->i_type == I_PUSH || vmi->i_type == I_POP){
+            write_push_pop(vmi->i_type, vmi->arg1, atoi(vmi->arg2), dest);
+        }
         ln = ln->next;
     }
     return "asm";
@@ -190,11 +491,6 @@ list* get_vm_filenames(char* filename)
     return l;
 }
 
-void merge_to_file(char** inputs, char* out_filename)
-{
-
-}
-
 char* extract_filename(char* path)
 {
     int p_len = strlen(path);
@@ -218,6 +514,22 @@ char* extract_filename(char* path)
     return str;
 }
 
+char* get_dest_filename(char* f)
+{
+    size_t ln = strlen(f);
+    char* temp;
+    if (strstr(f, ".vm") != NULL) {
+        temp = malloc(ln + 2);
+        strcpy(temp,f);
+        memcpy(temp + ln - 3, ".asm", 5);
+        return temp;
+    }
+    temp = malloc(ln + 5);
+    strcpy(temp,f);
+    strcat(temp, ".asm");
+    return temp;
+}
+
 int main (int argc, char** argv)
 {
     char* filename = *(argv + 1);
@@ -228,13 +540,15 @@ int main (int argc, char** argv)
     if (vm_filenames == NULL) {
         return 0;
     }
-    print_list(vm_filenames, print_string);
+    char* dest_filename = get_dest_filename(filename);
+    FILE* fptr = fopen(dest_filename, "w");
     list_node* ln = vm_filenames->head;
     while (ln != NULL) {
         char* content = read_file_full((char *)ln->data);
-        char* asm_code = gen_asm(parse(content), extract_filename((char *)ln->data)); // put in list
+        list* parsed_instructions = parse(content);
+        write_asm(parsed_instructions, extract_filename((char *)ln->data), fptr);
         ln = ln->next;
     }
-    // filenames.forEach(name=> getContent().then(parse).then(gen_asm))
-    // merge into file
+    fclose(fptr);
+    return 0;
 }

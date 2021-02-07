@@ -10,6 +10,7 @@
 #include <math.h>
 
 enum INSTRUCTION_TYPE { I_ARITHMETIC, I_PUSH, I_POP, I_LABEL, I_GOTO, I_IF, I_FUNCTION, I_RETURN, I_CALL };
+enum MEMORY_SEGMENT { M_ARG, M_LOCAL, M_STATIC, M_POINTER, M_THIS, M_THAT, M_TEMP, M_CONSTANT };
 
 int cmp_label_index = 1;
 typedef struct vm_instruction {
@@ -17,6 +18,7 @@ typedef struct vm_instruction {
     char* arg1;
     char* arg2;
     enum INSTRUCTION_TYPE i_type;
+    enum MEMORY_SEGMENT m_segment;
 } vm_instruction;
 
 typedef struct list_node {
@@ -190,6 +192,32 @@ void set_instruction_fields(vm_instruction* vmi, char* instr_text, int instr_len
     if (arg1) {
         vmi->arg1 = malloc(strlen(arg1) + 1);
         strcpy(vmi->arg1, arg1);
+        if (vmi->i_type == I_PUSH || vmi->i_type == I_POP) {
+            if (strcmp(arg1,"constant") == 0) {
+                vmi->m_segment = M_CONSTANT;
+            }
+            if (strcmp(arg1,"argument") == 0) {
+                vmi->m_segment = M_ARG;
+            }
+            if (strcmp(arg1,"local") == 0) {
+                vmi->m_segment = M_LOCAL;
+            }
+            if (strcmp(arg1,"static") == 0) {
+                vmi->m_segment = M_STATIC;
+            }
+            if (strcmp(arg1,"pointer") == 0) {
+                vmi->m_segment = M_POINTER;
+            }
+            if (strcmp(arg1,"this") == 0) {
+                vmi->m_segment = M_THIS;
+            }
+            if (strcmp(arg1,"that") == 0) {
+                vmi->m_segment = M_THAT;
+            }
+            if (strcmp(arg1,"temp") == 0) {
+                vmi->m_segment = M_TEMP;
+            }
+        }
     }
 
     char* arg2 = strtok(NULL, " ");
@@ -240,7 +268,6 @@ list* parse(char* vm_code)
     return l;
 }
 
-
 void write_arithmetic(char* instr, FILE* dest)
 {
     char* asm_code;
@@ -272,86 +299,61 @@ void write_arithmetic(char* instr, FILE* dest)
         fprintf(dest, "%s", asm_code);
     }
     if (strcmp(instr, "eq") == 0) {
-
-        char* asm_code;
-
-        int i_len = snprintf(NULL, 0, "%d", cmp_label_index);
-        char* a_instr = malloc(i_len + 10);
-        char* label = malloc(i_len + 11);
-        snprintf(a_instr, i_len + 10, "@cmp_lbl_%d", cmp_label_index);
-        snprintf(label, i_len + 11, "(cmp_lbl_%d)", cmp_label_index);
-
         asm_code =  "@SP\n"
                     "A=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
                     "D=D-M\n"
                     "M=0\n" // assume not equal ==> D!=0
-                    "%s\n" // @cmp_lbl_%d
+                    "@cmp_lbl_%d\n"
                     "D;JNE\n"
                     "@SP\n"
                     "A=M-1\n"
                     "A=A-1\n"
                     "M=-1\n" // equal
-                    "%s\n" // (cmp_lbl_%d)
+                    "(cmp_lbl_%d)\n"
                     "@SP\n"
                     "M=M-1\n";
-        fprintf(dest, asm_code, a_instr, label);
+        fprintf(dest, asm_code, cmp_label_index, cmp_label_index);
         cmp_label_index++;
     }
 
     if (strcmp(instr, "gt") == 0) {
-        char* asm_code;
-
-        int i_len = snprintf(NULL, 0, "%d", cmp_label_index);
-        char* a_instr = malloc(i_len + 10);
-        char* label = malloc(i_len + 11);
-        snprintf(a_instr, i_len + 10, "@cmp_lbl_%d", cmp_label_index);
-        snprintf(label, i_len + 11, "(cmp_lbl_%d)", cmp_label_index);
-
         asm_code =  "@SP\n"
                     "A=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
                     "D=M-D\n"
                     "M=0\n" // assume x<=y ==> D<=0
-                    "%s\n" // @cmp_lbl_%d
+                    "@cmp_lbl_%d\n"
                     "D;JLE\n"
                     "@SP\n"
                     "A=M-1\n"
                     "A=A-1\n"
                     "M=-1\n" // equal
-                    "%s\n" // (cmp_lbl_%d)
+                    "(cmp_lbl_%d)\n"
                     "@SP\n"
                     "M=M-1\n";
-        fprintf(dest, asm_code, a_instr, label);
+        fprintf(dest, asm_code, cmp_label_index, cmp_label_index);
         cmp_label_index++;
     }
     if (strcmp(instr, "lt") == 0) {
-        char* asm_code;
-
-        int i_len = snprintf(NULL, 0, "%d", cmp_label_index);
-        char* a_instr = malloc(i_len + 10);
-        char* label = malloc(i_len + 11);
-        snprintf(a_instr, i_len + 10, "@cmp_lbl_%d", cmp_label_index);
-        snprintf(label, i_len + 11, "(cmp_lbl_%d)", cmp_label_index);
-
         asm_code =  "@SP\n"
                     "A=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
                     "D=M-D\n"
                     "M=0\n" // assume x>=y ==> D>=0
-                    "%s\n" // @cmp_lbl_%d
+                    "@cmp_lbl_%d\n"
                     "D;JGE\n"
                     "@SP\n"
                     "A=M-1\n"
                     "A=A-1\n"
                     "M=-1\n" // equal
-                    "%s\n" // (cmp_lbl_%d)
+                    "(cmp_lbl_%d)\n"
                     "@SP\n"
                     "M=M-1\n";
-        fprintf(dest, asm_code, a_instr, label);
+        fprintf(dest, asm_code, cmp_label_index, cmp_label_index);
         cmp_label_index++;
     }
     if (strcmp(instr, "and") == 0) {
@@ -387,41 +389,122 @@ void write_arithmetic(char* instr, FILE* dest)
     }
 }
 
-void write_push_pop (enum INSTRUCTION_TYPE i_type, char* segment, uint16_t index, FILE* dest)
+char* get_segment_pointer (enum MEMORY_SEGMENT m_segment)
 {
-     char* asm_code;
-     int i_len = snprintf(NULL, 0, "%d", index);
-     char* a_instr = malloc(i_len + 2);
-     snprintf(a_instr, i_len + 2, "@%d", index);
-    if (i_type == I_PUSH && strcmp(segment, "constant") == 0) {
-        asm_code =  "D=A\n" // D now has constant `index`
+    switch (m_segment) {
+        case M_ARG:
+             return "ARG";
+        case M_LOCAL:
+             return "LCL";
+        case M_THIS:
+           return "THIS";
+        case M_THAT:
+             return "THAT";
+        default:
+            return NULL;
+    }
+}
+
+int get_segment_start_address(enum MEMORY_SEGMENT m_segment)
+{
+    switch (m_segment) {
+        case M_TEMP:
+            return 5;
+        case M_STATIC:
+            return 16;
+        case M_POINTER:
+            return 3;
+        default:
+            return -1;
+    }
+}
+
+void write_push_pop (enum INSTRUCTION_TYPE i_type, enum MEMORY_SEGMENT m_segment, uint16_t index, FILE* dest)
+{
+    char* asm_code;
+    char* segment_p = get_segment_pointer(m_segment);
+    int final_address = index + get_segment_start_address(m_segment);
+
+    if (m_segment == M_CONSTANT) { // PUSH contant {number}
+        asm_code =  "@%d\n"
+                    "D=A\n" // D now has constant `index`
                     "@SP\n"
                     "A=M\n"
                     "M=D\n"
                     "@SP\n"
                     "M=M+1\n";
-        fprintf(dest, "%s\n%s", a_instr, asm_code);
+        fprintf(dest, asm_code, index);
+        return;
+    }
+    int is_pointer_segment = !(m_segment == M_STATIC || m_segment == M_POINTER || m_segment == M_TEMP);
+    if (i_type == I_PUSH && is_pointer_segment) {
+        asm_code =  "@%s\n"
+                    "D=M\n" // store base address
+                    "@%d\n" // load index
+                    "A=D+A\n" // get final address
+                    "D=M\n" // data to push to stack
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D\n"
+                    "@SP\n"
+                    "M=M+1\n";
+        fprintf(dest, asm_code, segment_p, index);
     }
 
-    free(a_instr);
-    //  fprintf(dest, "%s", asm_code);
+    if (i_type == I_PUSH && !is_pointer_segment) {
+        asm_code =  "@%d\n" // get final address
+                    "D=M\n" // data to push to stack
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D\n"
+                    "@SP\n"
+                    "M=M+1\n";
+        fprintf(dest, asm_code, final_address);
+    }
+
+    if (i_type == I_POP && is_pointer_segment) {
+        asm_code =  "@%s\n"
+                    "D=M\n" // store base address
+                    "@%d\n" // load index
+                    "D=D+A\n" // get final address
+                    "@14\n"
+                    "M=D\n" // store final address in general purpose register to free reg D
+                    "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // data to pop
+                    "@14\n"
+                    "A=M\n"
+                    "M=D\n" // put data in desired address
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, asm_code, segment_p, index);
+    }
+
+    if (i_type == I_POP && !is_pointer_segment) {
+        asm_code =  "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n" // data to pop
+                    "@%d\n"
+                    "M=D\n" // put data in desired address
+                    "@SP\n"
+                    "M=M-1\n";
+        fprintf(dest, asm_code, final_address);
+    }
 }
 
-char* write_asm(list* instructions, char* vm_filename, FILE* dest)
+void write_asm(list* instructions, char* vm_filename, FILE* dest)
 {
     list_node* ln = instructions->head;
     while (ln != NULL) {
         vm_instruction* vmi = (vm_instruction*) ln->data;
-        // fprintf(dest, "%s - %d\n", vmi->instruction_text, vmi->i_type);
         if (vmi->i_type == I_ARITHMETIC){
             write_arithmetic(vmi->instruction_text, dest);
         }
         if (vmi->i_type == I_PUSH || vmi->i_type == I_POP){
-            write_push_pop(vmi->i_type, vmi->arg1, atoi(vmi->arg2), dest);
+            write_push_pop(vmi->i_type, vmi->m_segment, atoi(vmi->arg2), dest);
         }
         ln = ln->next;
     }
-    return "asm";
 }
 
 char* read_file_full(char* filename)
@@ -546,6 +629,7 @@ int main (int argc, char** argv)
     while (ln != NULL) {
         char* content = read_file_full((char *)ln->data);
         list* parsed_instructions = parse(content);
+        free(content);
         write_asm(parsed_instructions, extract_filename((char *)ln->data), fptr);
         ln = ln->next;
     }

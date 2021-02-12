@@ -492,16 +492,92 @@ void write_push_pop (enum INSTRUCTION_TYPE i_type, enum MEMORY_SEGMENT m_segment
     }
 }
 
+void write_program_flow (enum INSTRUCTION_TYPE i_type, char* label_name, char* func_name, FILE* dest)
+{
+    char* asm_code = NULL;
+    if (!func_name) {
+       func_name = "f";
+    }
+    switch (i_type) {
+        case I_LABEL:
+            asm_code = "(%s$%s)\n";
+            fprintf(dest, asm_code, func_name, label_name);
+            break;
+        case I_GOTO:
+            asm_code =  "@%s$%s\n"
+                        "0;JMP\n";
+            fprintf(dest, asm_code, func_name, label_name);
+            break;
+        case I_IF:
+            asm_code =  "@SP\n"
+                        "AM=M-1\n"
+                        "D=M\n"
+                        "@%s$%s\n"
+                        "D;JNE\n";
+            fprintf(dest, asm_code, func_name, label_name);
+            break;
+        default:
+            printf("\ninvalid program flow instruction");
+            exit(1);
+    }
+}
+
+void write_function(char* name, int var_count, FILE* dest)
+{
+  char* asm_code = "(%s)\n";
+  fprintf(dest, asm_code, name);
+  for (int i = var_count; i > 0; i--) {
+      fprintf(dest, "%s\n", "PUSH 0");
+  }
+}
+
+void write_call(char* f, int arg_count, char* vm_filename, FILE* dest)
+{
+
+}
+
+void write_return(void)
+{
+
+}
+
+void write_bootstrap(void)
+{
+
+}
+
 void write_asm(list* instructions, char* vm_filename, FILE* dest)
 {
     list_node* ln = instructions->head;
+    char* current_function = NULL;
     while (ln != NULL) {
         vm_instruction* vmi = (vm_instruction*) ln->data;
-        if (vmi->i_type == I_ARITHMETIC){
-            write_arithmetic(vmi->instruction_text, dest);
-        }
-        if (vmi->i_type == I_PUSH || vmi->i_type == I_POP){
-            write_push_pop(vmi->i_type, vmi->m_segment, atoi(vmi->arg2), dest);
+        switch (vmi->i_type) {
+            case I_ARITHMETIC:
+                write_arithmetic(vmi->instruction_text, dest);
+                break;
+            case I_PUSH:
+            case I_POP:
+                write_push_pop(vmi->i_type, vmi->m_segment, atoi(vmi->arg2), dest);
+                break;
+            case I_LABEL:
+            case I_IF:
+            case I_GOTO:
+                write_program_flow(vmi->i_type, vmi->arg1, current_function, dest);
+                break;
+            case I_FUNCTION:
+                current_function = vmi->arg1;
+                write_function(current_function, atoi(vmi->arg2), dest);
+                break;
+            case I_CALL:
+                write_call(vmi->arg1, atoi(vmi->arg2), current_function, dest);
+                break;
+            case I_RETURN:
+                write_return();
+                break;
+            default:
+                printf("\nunsupported instruction type");
+                exit(1);
         }
         ln = ln->next;
     }

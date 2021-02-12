@@ -249,12 +249,11 @@ void print_instructions(c_node* head)
 
 char* int_to_bin16(int16_t num)
 {
-    int originalNUm = num;
     int i = 16; // number of bits
     char* binary = (char*) malloc(i + 1);
     binary[i] = '\0';
     while(i > 0) {
-        binary[i-1] = (num & (int16_t)1) ? '1' : '0';
+        binary[i-1] = (num & 1) ? '1' : '0';
         i--;
         num >>=1;
     }
@@ -452,18 +451,17 @@ void assemble(c_node* head, Map m, char* dest)
                 break;
             case C_INSTRUCTION:
                 bin_instr = malloc(sizeof(char) * 17);
-                bin_instr[0] = bin_instr[1] = bin_instr[2] = '1';
-                memcpy(&bin_instr[3], get_comp_inst(instr->data.c_fields.comp), 7 * sizeof(char));
-                memcpy(&bin_instr[10], get_dest_inst(instr->data.c_fields.dest), 3 * sizeof(char));
-                memcpy(&bin_instr[13], get_jmp_inst(instr->data.c_fields.jump), 3 * sizeof(char));
-                bin_instr[16] = '\0';
+                strcpy(bin_instr, "111");
+                strcat(bin_instr, get_comp_inst(instr->data.c_fields.comp));
+                strcat(bin_instr, get_dest_inst(instr->data.c_fields.dest));
+                strcat(bin_instr, get_jmp_inst(instr->data.c_fields.jump));
                 write_instruction(fptr, bin_instr);
                 break;
             case LABEL:
                 break;
         }
         if (bin_instr != NULL) {
-            free(bin_instr);
+            // free(bin_instr);
             bin_instr = NULL;
         }
         temp=temp->next;

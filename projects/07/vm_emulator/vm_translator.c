@@ -12,7 +12,8 @@
 enum INSTRUCTION_TYPE { I_ARITHMETIC, I_PUSH, I_POP, I_LABEL, I_GOTO, I_IF, I_FUNCTION, I_RETURN, I_CALL };
 enum MEMORY_SEGMENT { M_ARG, M_LOCAL, M_STATIC, M_POINTER, M_THIS, M_THAT, M_TEMP, M_CONSTANT };
 
-int cmp_label_index = 1;
+int cmp_label_index = 0;
+int ret_address_count = 0;
 typedef struct vm_instruction {
     char* instruction_text;
     char* arg1;
@@ -273,22 +274,18 @@ void write_arithmetic(char* instr, FILE* dest)
     char* asm_code;
     if (strcmp(instr, "add") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
-                    "M=D+M\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "M=D+M\n";
         fprintf(dest, "%s", asm_code);
     }
     if (strcmp(instr, "sub") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n"
-                    "M=M-D\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "M=M-D\n";
         fprintf(dest, "%s", asm_code);
     }
     if (strcmp(instr, "neg") == 0) {
@@ -300,7 +297,7 @@ void write_arithmetic(char* instr, FILE* dest)
     }
     if (strcmp(instr, "eq") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
                     "D=D-M\n"
@@ -309,18 +306,15 @@ void write_arithmetic(char* instr, FILE* dest)
                     "D;JNE\n"
                     "@SP\n"
                     "A=M-1\n"
-                    "A=A-1\n"
                     "M=-1\n" // equal
-                    "(cmp_lbl_%d)\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "(cmp_lbl_%d)\n";
         fprintf(dest, asm_code, cmp_label_index, cmp_label_index);
         cmp_label_index++;
     }
 
     if (strcmp(instr, "gt") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
                     "D=M-D\n"
@@ -329,17 +323,14 @@ void write_arithmetic(char* instr, FILE* dest)
                     "D;JLE\n"
                     "@SP\n"
                     "A=M-1\n"
-                    "A=A-1\n"
                     "M=-1\n" // equal
-                    "(cmp_lbl_%d)\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "(cmp_lbl_%d)\n";
         fprintf(dest, asm_code, cmp_label_index, cmp_label_index);
         cmp_label_index++;
     }
     if (strcmp(instr, "lt") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
                     "D=M-D\n"
@@ -348,32 +339,25 @@ void write_arithmetic(char* instr, FILE* dest)
                     "D;JGE\n"
                     "@SP\n"
                     "A=M-1\n"
-                    "A=A-1\n"
                     "M=-1\n" // equal
-                    "(cmp_lbl_%d)\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "(cmp_lbl_%d)\n";
         fprintf(dest, asm_code, cmp_label_index, cmp_label_index);
         cmp_label_index++;
     }
     if (strcmp(instr, "and") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
-                    "M=D&M\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "M=D&M\n";
         fprintf(dest, "%s", asm_code);
     }
     if (strcmp(instr, "or") == 0) {
         asm_code =  "@SP\n"
-                    "A=M-1\n"
+                    "AM=M-1\n"
                     "D=M\n" // load first number
                     "A=A-1\n" // A is now addres of second number
-                    "M=D|M\n"
-                    "@SP\n"
-                    "M=M-1\n";
+                    "M=D|M\n";
         fprintf(dest, "%s", asm_code);
     }
     if (strcmp(instr, "not") == 0) {
@@ -410,8 +394,6 @@ int get_segment_start_address(enum MEMORY_SEGMENT m_segment)
     switch (m_segment) {
         case M_TEMP:
             return 5;
-        case M_STATIC:
-            return 16;
         case M_POINTER:
             return 3;
         default:
@@ -419,7 +401,7 @@ int get_segment_start_address(enum MEMORY_SEGMENT m_segment)
     }
 }
 
-void write_push_pop (enum INSTRUCTION_TYPE i_type, enum MEMORY_SEGMENT m_segment, uint16_t index, FILE* dest)
+void write_push_pop (enum INSTRUCTION_TYPE i_type, enum MEMORY_SEGMENT m_segment, uint16_t index, char* vm_filename, FILE* dest)
 {
     char* asm_code;
     char* segment_p = get_segment_pointer(m_segment);
@@ -436,8 +418,20 @@ void write_push_pop (enum INSTRUCTION_TYPE i_type, enum MEMORY_SEGMENT m_segment
         fprintf(dest, asm_code, index);
         return;
     }
-    int is_pointer_segment = !(m_segment == M_STATIC || m_segment == M_POINTER || m_segment == M_TEMP);
+    int is_pointer_segment = !(m_segment == M_POINTER || m_segment == M_TEMP);
+
     if (i_type == I_PUSH && is_pointer_segment) {
+         if (m_segment == M_STATIC) {
+            asm_code =  "@%s_static_%d\n" // get final address
+                        "D=M\n" // data to push to stack
+                        "@SP\n"
+                        "A=M\n"
+                        "M=D\n"
+                        "@SP\n"
+                        "M=M+1\n";
+            fprintf(dest, asm_code, vm_filename, index);
+            return;
+        }
         asm_code =  "@%s\n"
                     "D=M\n" // store base address
                     "@%d\n" // load index
@@ -463,6 +457,17 @@ void write_push_pop (enum INSTRUCTION_TYPE i_type, enum MEMORY_SEGMENT m_segment
     }
 
     if (i_type == I_POP && is_pointer_segment) {
+        if (m_segment == M_STATIC) {
+            asm_code =  "@SP\n"
+                        "A=M-1\n"
+                        "D=M\n" // data to pop
+                        "@%s_static_%d\n"
+                        "M=D\n" // put data in desired address
+                        "@SP\n"
+                        "M=M-1\n";
+            fprintf(dest, asm_code, vm_filename, index);
+            return;
+        }
         asm_code =  "@%s\n"
                     "D=M\n" // store base address
                     "@%d\n" // load index
@@ -524,26 +529,129 @@ void write_program_flow (enum INSTRUCTION_TYPE i_type, char* label_name, char* f
 
 void write_function(char* name, int var_count, FILE* dest)
 {
-  char* asm_code = "(%s)\n";
-  fprintf(dest, asm_code, name);
+  char* asm_code =  "@SP\n"
+                    "A=M\n"
+                    "M=0\n"
+                    "@SP\n"
+                    "M=M+1\n";
+
+  fprintf(dest, "(%s)\n", name);
   for (int i = var_count; i > 0; i--) {
-      fprintf(dest, "%s\n", "PUSH 0");
+      fprintf(dest, "%s", asm_code);
   }
 }
 
-void write_call(char* f, int arg_count, char* vm_filename, FILE* dest)
+void write_call(char* f, int arg_count, FILE* dest)
 {
+    char* asm_code= "@ret_address_%d\n"
+                    "D=A\n"
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D // push RETURN address\n"
+                    "@SP\n"
+                    "M=M+1 // inc SP\n"
 
+                    "@LCL\n"
+                    "D=M\n"
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D // push LCL\n"
+                    "@SP\n"
+                    "M=M+1 // inc SP\n"
+
+                    "@ARG\n"
+                    "D=M\n"
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D // push ARG\n"
+                    "@SP\n"
+                    "M=M+1 // inc SP\n"
+
+                    "@THIS\n"
+                    "D=M\n"
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D // push THIS\n"
+                    "@SP\n"
+                    "M=M+1 // inc SP\n"
+
+                    "@THAT\n"
+                    "D=M\n"
+                    "@SP\n"
+                    "A=M\n"
+                    "M=D // push THAT\n"
+                    "@SP\n"
+                    "MD=M+1 // inc SP\n"
+
+                    "@LCL\n"
+                    "M=D // LCL=SP\n"
+
+                    "@5\n"
+                    "D=D-A // SP-=5\n"
+                    "@%d // number of args\n"
+                    "D=D-A // SP-=arg_count\n"
+                    "@ARG\n"
+                    "M=D // ARG = SP-5-arg_count\n"
+
+                    "@%s\n"
+                    "0;JMP\n"
+                    "(ret_address_%d)\n";
+
+    fprintf(dest, asm_code, ret_address_count, arg_count, f, ret_address_count);
+    ret_address_count++;
 }
 
-void write_return(void)
+void write_return(FILE* dest)
 {
+    char* asm_code= "@5\n"
+                    "D=A\n"
+                    "@LCL\n"
+                    "A=M-D\n"
+                    "D=M // D=return_address\n"
+                    "@R13\n"
+                    "M=D // saving return_address\n"
 
-}
+                    "@SP\n"
+                    "A=M-1\n"
+                    "D=M\n"
+                    "@ARG\n"
+                    "A=M\n"
+                    "M=D // *ARG = *(SP - 1)\n"
 
-void write_bootstrap(void)
-{
+                    "@ARG\n"
+                    "D=M\n"
+                    "@SP\n"
+                    "M=D+1 // SP=ARG+1\n"
 
+                    "@LCL\n"
+                    "AM=M-1\n"
+                    "D=M\n"
+                    "@THAT\n"
+                    "M=D // restoring THAT\n"
+
+                    "@LCL\n"
+                    "AM=M-1\n"
+                    "D=M\n"
+                    "@THIS\n"
+                    "M=D // restoring THIS\n"
+
+                    "@LCL\n"
+                    "AM=M-1\n"
+                    "D=M\n"
+                    "@ARG\n"
+                    "M=D // restoring ARG\n"
+
+                    "@LCL\n"
+                    "A=M-1\n"
+                    "D=M\n"
+                    "@LCL\n"
+                    "M=D // restoring LCL\n"
+
+                    "@R13\n"
+                    "A=M\n"
+                    "0;JMP\n";
+
+    fprintf(dest,"%s", asm_code);
 }
 
 void write_asm(list* instructions, char* vm_filename, FILE* dest)
@@ -558,7 +666,7 @@ void write_asm(list* instructions, char* vm_filename, FILE* dest)
                 break;
             case I_PUSH:
             case I_POP:
-                write_push_pop(vmi->i_type, vmi->m_segment, atoi(vmi->arg2), dest);
+                write_push_pop(vmi->i_type, vmi->m_segment, atoi(vmi->arg2), vm_filename, dest);
                 break;
             case I_LABEL:
             case I_IF:
@@ -570,10 +678,10 @@ void write_asm(list* instructions, char* vm_filename, FILE* dest)
                 write_function(current_function, atoi(vmi->arg2), dest);
                 break;
             case I_CALL:
-                write_call(vmi->arg1, atoi(vmi->arg2), current_function, dest);
+                write_call(vmi->arg1, atoi(vmi->arg2), dest);
                 break;
             case I_RETURN:
-                write_return();
+                write_return(dest);
                 break;
             default:
                 printf("\nunsupported instruction type");
@@ -689,6 +797,16 @@ char* get_dest_filename(char* f)
     return temp;
 }
 
+void write_bootstrap(FILE* dest)
+{
+    char* asm_code =  "@256\n"
+                      "D=A\n"
+                      "@SP\n"
+                      "M=D\n";
+    fprintf(dest, "%s", asm_code);
+    write_call("Sys.init", 0, dest);
+}
+
 int main (int argc, char** argv)
 {
     char* filename = *(argv + 1);
@@ -702,6 +820,7 @@ int main (int argc, char** argv)
     char* dest_filename = get_dest_filename(filename);
     FILE* fptr = fopen(dest_filename, "w");
     list_node* ln = vm_filenames->head;
+    write_bootstrap(fptr);
     while (ln != NULL) {
         char* content = read_file_full((char *)ln->data);
         list* parsed_instructions = parse(content);

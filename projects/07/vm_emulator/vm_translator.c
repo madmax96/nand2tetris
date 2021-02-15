@@ -13,7 +13,7 @@ enum INSTRUCTION_TYPE { I_ARITHMETIC, I_PUSH, I_POP, I_LABEL, I_GOTO, I_IF, I_FU
 enum MEMORY_SEGMENT { M_ARG, M_LOCAL, M_STATIC, M_POINTER, M_THIS, M_THAT, M_TEMP, M_CONSTANT };
 
 int cmp_label_index = 0;
-int ret_address_count = 0;
+int ret_address_index = 0;
 typedef struct vm_instruction {
     char* instruction_text;
     char* arg1;
@@ -32,18 +32,16 @@ typedef struct list {
    size_t size;
 } list;
 
-list_node* new_list_node(void* data, size_t data_size)
+list_node* new_list_node(void* data)
 {
-    list_node* ln = malloc(sizeof(list_node));
-    ln->data = malloc(data_size);
-    memcpy(ln->data, data, data_size);
-    ln->next = NULL;
+    list_node* ln = calloc(1, sizeof(list_node));
+    ln->data = data;
     return ln;
 }
 
 list* new_list(list_node* head)
 {
-    list* l = malloc(sizeof(list));
+    list* l = calloc(1, sizeof(list));
     l->head = head;
     l->size = head == NULL ? 0 : 1;
     return l;
@@ -65,53 +63,66 @@ int list_add (list* l, list_node* ln)
     return l->size;
 }
 
-void free_list_node(list_node* n)
+void list_foreach(list* l, void (*fn)(void*, int))
 {
-    free(n->data);
+    if (l == NULL) return;
+    int i = 0;
+    list_node *n = l->head;
+    while (n) {
+        fn(n->data, i++);
+        n = n->next;
+    }
+}
+
+void free_vm_instruction (void* i) {
+    if (i == NULL) return;
+    vm_instruction* vmi = (vm_instruction*) i;
+    free(vmi->arg1);
+    free(vmi->arg2);
+    free(vmi->instruction_text);
+    free(vmi);
+}
+
+void free_list_nodes(list_node* n, void (*free_data_fn)(void*))
+{
+    if (n == NULL) return;
+    if (n->next) {
+        free_list_nodes(n->next, free_data_fn);
+    }
+    free_data_fn(n->data);
     free(n);
 }
 
-void free_list(list* l)
+void free_list(list* l, void (*free_ptr)(void*))
 {
-    list_node* head = l->head;
-    list_node* cur = head;
     if (l == NULL) {
         return;
     }
-    if (head == NULL){
+
+    list_node* head = l->head;
+    if (head == NULL) {
         free(l);
         return;
     }
-    while (head != NULL) {
-        // head = head->next;
-        // cur = head;
-        // free(cur);
-    }
+    free_list_nodes(head, free_ptr);
     free(l);
 }
 
-void print_list(list* l, void (*fptr)(void *))
+void print_list(list* l, void (*print_fn)(void *, int))
 {
-    if (l == NULL) {
-        return;
-    }
-    list_node* node = l->head;
-    while (node != NULL) {
-        (*fptr)(node->data);
-        node = node->next;
-    }
+    list_foreach(l, print_fn);
 }
 
-void print_string(void *d)
+void print_string(void *d, int i)
 {
-   printf("\n%s", (char *)d);
+   printf("\n%d:  %s", i, (char *)d);
 }
 
-void print_vmi(void *d)
+void print_vmi(void *d , int i)
 {
     vm_instruction* vmi = (vm_instruction*)d;
     printf("\n");
-    printf("instruction text --> %s\narg1 --> %s\narg2 --> %s\ntype -->  %d", vmi->instruction_text, vmi->arg1, vmi->arg2, vmi->i_type);
+    printf("%d:  instruction text --> %s\narg1 --> %s\narg2 --> %s\ntype -->  %d", i, vmi->instruction_text, vmi->arg1, vmi->arg2, vmi->i_type);
 }
 
 // removes spaces from the ends of the string
@@ -164,7 +175,7 @@ int str_starts_with (char* source, char* test)
 
 void set_instruction_fields(vm_instruction* vmi, char* instr_text, int instr_length)
 {
-    vmi->instruction_text = malloc(instr_length + 1);
+    vmi->instruction_text = calloc(1, instr_length + 1);
     strcpy(vmi->instruction_text, instr_text);
 
     if (str_starts_with(instr_text, "push")) {
@@ -191,7 +202,7 @@ void set_instruction_fields(vm_instruction* vmi, char* instr_text, int instr_len
 
     char* arg1 = strtok(NULL, " ");
     if (arg1) {
-        vmi->arg1 = malloc(strlen(arg1) + 1);
+        vmi->arg1 = calloc(1, strlen(arg1) + 1);
         strcpy(vmi->arg1, arg1);
         if (vmi->i_type == I_PUSH || vmi->i_type == I_POP) {
             if (strcmp(arg1,"constant") == 0) {
@@ -223,7 +234,7 @@ void set_instruction_fields(vm_instruction* vmi, char* instr_text, int instr_len
 
     char* arg2 = strtok(NULL, " ");
      if (arg2) {
-        vmi->arg2 = malloc(strlen(arg2) + 1);
+        vmi->arg2 = calloc(1, strlen(arg2) + 1);
         strcpy(vmi->arg2,arg2);
      }
     return;
@@ -255,10 +266,9 @@ list* parse(char* vm_code)
         }
         if (should_parse) {
             if ((line_len = str_strip_spaces(line_buff))) {
-                vm_instruction* vmi = malloc(vmi_size);
+                vm_instruction* vmi = calloc(1, vmi_size);
                 set_instruction_fields(vmi, line_buff, line_len);
-                list_add(l, new_list_node(vmi, vmi_size));
-                free(vmi);
+                list_add(l, new_list_node(vmi));
             }
             line_buff[0] = '\0';
             line_len = 0;
@@ -597,8 +607,8 @@ void write_call(char* f, int arg_count, FILE* dest)
                     "0;JMP\n"
                     "(ret_address_%d)\n";
 
-    fprintf(dest, asm_code, ret_address_count, arg_count, f, ret_address_count);
-    ret_address_count++;
+    fprintf(dest, asm_code, ret_address_index, arg_count, f, ret_address_index);
+    ret_address_index++;
 }
 
 void write_return(FILE* dest)
@@ -697,7 +707,7 @@ char* read_file_full(char* filename)
     struct stat st;
     stat(filename, &st);
     size_t fsize = (size_t) st.st_size;
-    char *content = malloc(fsize + 1);
+    char *content = calloc(1, fsize + 1);
     size_t r_count = fread(content, 1, fsize, f);
     fclose(f);
     if (r_count != fsize) {
@@ -719,8 +729,6 @@ int is_valid_vm_file (char* filename, struct stat st)
 
 list* get_vm_filenames(char* filename)
 {
-    int file_no = 0;
-    char** res;
     struct stat st;
     stat(filename, &st);
     int is_dir = S_ISDIR(st.st_mode);
@@ -731,7 +739,9 @@ list* get_vm_filenames(char* filename)
         return NULL;
     }
     if (is_vm_file) {
-        return new_list(new_list_node(filename, strlen(filename) + 1));
+        char* t = calloc(strlen(filename) + 1, 1);
+        strcpy(t,filename);
+        return new_list(new_list_node(t));
     }
 
     list* l = new_list(NULL);
@@ -742,17 +752,15 @@ list* get_vm_filenames(char* filename)
     d = opendir(filename);
     if (!d) return l;
     while ((dir = readdir(d)) != NULL) {
-        char* f_name = (char *) malloc(strlen(dir->d_name) + strlen(filename) + 2);
-        *f_name = 0;
+        char* f_name = calloc(1, strlen(dir->d_name) + strlen(filename) + 2);
         strcat(f_name, filename);
         strcat(f_name, "/");
         strcat(f_name, dir->d_name);
 
         stat(f_name, &f_st);
         if (is_valid_vm_file(f_name, f_st)) {
-            list_add(l, new_list_node(f_name, strlen(f_name) + 1));
+            list_add(l, new_list_node(f_name));
         }
-        free(f_name);
     }
     closedir(d);
     return l;
@@ -775,7 +783,7 @@ char* extract_filename(char* path)
     if (!f_len) {
         return "";
     }
-    char* str = malloc(f_len + 1);
+    char* str = calloc(1, f_len + 1);
     int offset = p_len - f_len;
     memcpy(str, temp + offset, f_len + 1);
     return str;
@@ -786,12 +794,12 @@ char* get_dest_filename(char* f)
     size_t ln = strlen(f);
     char* temp;
     if (strstr(f, ".vm") != NULL) {
-        temp = malloc(ln + 2);
+        temp = calloc(1, ln + 2);
         strcpy(temp,f);
         memcpy(temp + ln - 3, ".asm", 5);
         return temp;
     }
-    temp = malloc(ln + 5);
+    temp = calloc(1, ln + 5);
     strcpy(temp,f);
     strcat(temp, ".asm");
     return temp;
@@ -817,17 +825,24 @@ int main (int argc, char** argv)
     if (vm_filenames == NULL) {
         return 0;
     }
+    print_list(vm_filenames, print_string);
     char* dest_filename = get_dest_filename(filename);
     FILE* fptr = fopen(dest_filename, "w");
+    free(dest_filename);
     list_node* ln = vm_filenames->head;
     write_bootstrap(fptr);
     while (ln != NULL) {
         char* content = read_file_full((char *)ln->data);
         list* parsed_instructions = parse(content);
         free(content);
-        write_asm(parsed_instructions, extract_filename((char *)ln->data), fptr);
+        char* extracted_filename = extract_filename((char *)ln->data);
+        write_asm(parsed_instructions, extracted_filename, fptr);
+        free(extracted_filename);
+        // print_list(parsed_instructions, print_vmi);
+        free_list(parsed_instructions, free_vm_instruction);
         ln = ln->next;
     }
+    free_list(vm_filenames, free);
     fclose(fptr);
     return 0;
 }
